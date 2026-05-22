@@ -62,8 +62,11 @@ function cc_attack_check()
         local ATTACK_URI=ngx.var.uri
         local CC_TOKEN = get_client_ip()..ATTACK_URI
         local limit = ngx.shared.limit
-        CCcount=tonumber(string.match(config_cc_rate,'(.*)/'))
-        CCseconds=tonumber(string.match(config_cc_rate,'/(.*)'))
+        if limit == nil then
+            return false
+        end
+        local CCcount=tonumber(string.match(config_cc_rate,'(.*)/'))
+        local CCseconds=tonumber(string.match(config_cc_rate,'/(.*)'))
         local req,_ = limit:get(CC_TOKEN)
         if req then
             if req > CCcount then
@@ -96,7 +99,7 @@ function cookie_attack_check()
                     end
                 end
              end
-	 end
+         end
     end
     return false
 end
@@ -123,13 +126,17 @@ end
 function url_args_attack_check()
     if config_url_args_check == "on" then
         local REQ_ARGS,ERR = ngx.req.get_uri_args()
-            -- limit max args to stop uri parameter overflow , return 403 if args larger than default(100)
-            if err == "truncated" then
+            -- limit max post args to stop uri parameter overflow , return 403 if args larger than default(100)
+            if ERR == "truncated" then
                 ngx.exit(403)
             end
+        if REQ_ARGS == nil then
+            return false
+        end
         local ARGS_RULES = get_rule('args.rule')
         for _,rule in pairs(ARGS_RULES) do
             for key, val in pairs(REQ_ARGS) do
+                local ARGS_DATA
                 if type(val) == 'table' then
                     ARGS_DATA = table.concat(val, " ")
                 else
@@ -176,27 +183,28 @@ function post_attack_check()
             if err == "truncated" then
                 ngx.exit(403)
             end
+        if POST_ARGS == nil then
+            return false
+        end
         local POST_RULES = get_rule('post.rule')
 
-    	for key, val in pairs(POST_ARGS) do
-            if type(val) == "table" then
-	            ARGS_DATA = table.concat(key, ", ")
-            else
-                ARGS_DATA = key
-            end 
-	    end
-
         for _,rule in pairs(POST_RULES) do
-            if ARGS_DATA and type(ARGS_DATA) ~= "boolean" and rule ~="" and rulematch(unescape(ARGS_DATA),rule,"jo") then
-                log_record('Deny_POST_Args',ngx.var.request_uri,"-",rule)
-                if config_waf_enable == "on" then
-                    waf_output()
-                    return true
+            for key, val in pairs(POST_ARGS) do
+                local POST_DATA
+                if type(val) == 'table' then
+                    POST_DATA = table.concat(val, " ")
+                else
+                    POST_DATA = val
+                end
+                if POST_DATA and type(POST_DATA) ~= "boolean" and rule ~="" and rulematch(unescape(POST_DATA),rule,"jo") then
+                    log_record('Deny_POST_Args',ngx.var.request_uri,"-",rule)
+                    if config_waf_enable == "on" then
+                        waf_output()
+                        return true
+                    end
                 end
             end
         end
-        return true
     end
     return false
 end
-
